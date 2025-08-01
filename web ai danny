@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Pribadi</title>
+    <!-- Memuat Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Memuat Prism.js CSS untuk syntax highlighting (tema gelap) -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+    <style>
+        /* Gaya kustom untuk font Inter */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a1a1a; /* Latar belakang gelap seperti Gemini */
+            color: #e0e0e0; /* Warna teks terang */
+            display: flex;
+            height: 100vh;
+            overflow: hidden; /* Mencegah scroll di body */
+        }
+        .sidebar {
+            width: 280px; /* Lebar sidebar */
+            background-color: #202020; /* Warna sidebar lebih gelap */
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #333;
+        }
+        .main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: #242424; /* Warna latar belakang chat */
+        }
+        .chat-area {
+            flex-grow: 1;
+            overflow-y: auto; /* Bisa di-scroll */
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .message-bubble {
+            max-width: 70%; /* Lebar maksimum bubble */
+            padding: 0.75rem 1rem;
+            border-radius: 0.75rem;
+            line-height: 1.5;
+        }
+        .user-message {
+            background-color: #4a90e2; /* Warna biru untuk pesan pengguna */
+            align-self: flex-end; /* Pesan pengguna di kanan */
+            color: white;
+            border-bottom-right-radius: 0.25rem; /* Sudut bawah kanan lebih kecil */
+        }
+        .ai-message {
+            background-color: #333; /* Warna abu-abu gelap untuk pesan AI */
+            align-self: flex-start; /* Pesan AI di kiri */
+            color: #e0e0e0;
+            border-bottom-left-radius: 0.25rem; /* Sudut bawah kiri lebih kecil */
+        }
+        .input-container {
+            padding: 1rem 2rem;
+            background-color: #242424;
+            border-top: 1px solid #333;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .prompt-input {
+            flex-grow: 1;
+            min-height: 48px;
+            max-height: 200px; /* Batasi tinggi input */
+            padding: 0.75rem 1rem;
+            border-radius: 1.5rem; /* Lebih membulat */
+            background-color: #333;
+            border: 1px solid #444;
+            color: #e0e0e0;
+            resize: none; /* Nonaktifkan resize default */
+            overflow-y: auto; /* Scroll jika teks panjang */
+            transition: all 0.2s ease-in-out;
+        }
+        .prompt-input:focus {
+            outline: none;
+            border-color: #4a90e2;
+            box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.3);
+        }
+        .send-button {
+            background-color: #4a90e2;
+            color: white;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s ease-in-out;
+        }
+        .send-button:hover:not(:disabled) {
+            background-color: #6a82fb;
+        }
+        .send-button:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+        }
+        .loading-spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-left-color: #ffffff;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Gaya khusus untuk blok kode Prism.js di chat */
+        .message-bubble pre {
+            margin: 0.5rem 0;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            background-color: #1e1e1e; /* Latar belakang kode lebih gelap */
+            overflow-x: auto;
+            color: #e0e0e0; /* Warna teks kode */
+        }
+        .message-bubble code {
+            font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+            font-size: 0.85rem;
+            line-height: 1.4;
+        }
+
+        .robot-container {
+            width: 80px; /* Ukuran robot di pojok bawah */
+            height: 80px;
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+            z-index: 10; /* Pastikan di atas elemen lain */
+        }
+        .robot-container.talking {
+            opacity: 1;
+            animation: robotBounce 0.8s infinite alternate ease-in-out;
+        }
+        @keyframes robotBounce {
+            0% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+            100% { transform: translateY(0); }
+        }
+        .robot-mouth {
+            transform-origin: center;
+            animation: mouthTalk 0.4s infinite alternate;
+        }
+        .robot-container.talking .robot-mouth {
+            animation: mouthTalk 0.4s infinite alternate;
+        }
+        @keyframes mouthTalk {
+            0% { transform: scaleY(1); }
+            50% { transform: scaleY(0.5); }
+            100% { transform: scaleY(1); }
+        }
+        .robot-svg {
+            width: 100%;
+            height: 100%;
+            fill: #4a90e2; /* Warna robot */
+            filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.4)); /* Bayangan pada robot */
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 70px; /* Sidebar lebih kecil di mobile */
+                padding: 0.5rem;
+            }
+            .sidebar-text {
+                display: none; /* Sembunyikan teks di sidebar mobile */
+            }
+            .main-content {
+                padding: 0.5rem;
+            }
+            .chat-area {
+                padding: 1rem;
+            }
+            .message-bubble {
+                max-width: 90%;
+            }
+            .input-container {
+                padding: 0.75rem 1rem;
+            }
+            .robot-container {
+                width: 60px;
+                height: 60px;
+                bottom: 10px;
+                right: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="flex items-center justify-between mb-6">
+            <h2 class="text-xl font-bold sidebar-text">AI Pribadi</h2>
+            <button class="text-gray-400 hover:text-white focus:outline-none">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+            </button>
+        </div>
+        <button id="newChatButton" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-full flex items-center justify-center gap-2 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
+            </svg>
+            <span class="sidebar-text">Obrolan Baru</span>
+        </button>
+        <div class="flex-grow overflow-y-auto">
+            <!-- Riwayat obrolan akan muncul di sini -->
+            <ul id="chatHistory" class="text-gray-400 text-sm">
+                <!-- Contoh: -->
+                <!-- <li class="py-1 px-2 rounded hover:bg-gray-700 cursor-pointer">Obrolan 1</li> -->
+            </ul>
+        </div>
+        <!-- Bagian ini dihapus -->
+        <!--
+        <div class="mt-auto pt-4 border-t border-gray-700">
+            <button class="text-gray-400 hover:text-white flex items-center gap-2 py-2 px-2 rounded">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                </svg>
+                <span class="sidebar-text">Bantuan & FAQ</span>
+            </button>
+            <button class="text-gray-400 hover:text-white flex items-center gap-2 py-2 px-2 rounded">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd" />
+                </svg>
+                <span class="sidebar-text">Setelan</span>
+            </button>
+        </div>
+        -->
+    </div>
+
+    <div class="main-content">
+        <div id="chatArea" class="chat-area">
+            <!-- Pesan chat akan muncul di sini -->
+            <div class="ai-message message-bubble">
+                Halo! Saya Danny AI, siap membantu Anda. Ada yang bisa saya bantu?
+            </div>
+        </div>
+
+        <div class="input-container">
+            <textarea id="promptInput"
+                      class="prompt-input"
+                      placeholder="Kirim pesan..."></textarea>
+            <button id="sendButton" class="send-button">
+                <span id="buttonIcon">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                    </svg>
+                </span>
+                <div id="loadingSpinner" class="loading-spinner hidden"></div>
+            </button>
+        </div>
+    </div>
+
+    <!-- Robot container -->
+    <div id="robotContainer" class="robot-container">
+        <svg class="robot-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <!-- Body -->
+            <rect x="25" y="30" width="50" height="40" rx="8" ry="8" fill="#6a82fb"/>
+            <!-- Head -->
+            <circle cx="50" cy="25" r="18" fill="#4a90e2"/>
+            <!-- Eyes -->
+            <circle cx="42" cy="22" r="3" fill="white"/>
+            <circle cx="58" cy="22" r="3" fill="white"/>
+            <!-- Mouth (animated) -->
+            <rect class="robot-mouth" x="45" y="28" width="10" height="3" rx="1" ry="1" fill="white"/>
+            <!-- Arms -->
+            <rect x="15" y="35" width="10" height="25" rx="5" ry="5" fill="#6a82fb"/>
+            <rect x="75" y="35" width="10" height="25" rx="5" ry="5" fill="#6a82fb"/>
+            <!-- Legs -->
+            <rect x="35" y="70" width="10" height="20" rx="5" ry="5" fill="#6a82fb"/>
+            <rect x="55" y="70" width="10" height="20" rx="5" ry="5" fill="#6a82fb"/>
+            <!-- Antenna -->
+            <rect x="48" y="5" width="4" height="10" fill="#4a90e2"/>
+            <circle cx="50" cy="5" r="3" fill="#6a82fb"/>
+        </svg>
+    </div>
+
+    <!-- Memuat Prism.js JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+
+    <script>
+        // Mengambil elemen-elemen DOM
+        const promptInput = document.getElementById('promptInput');
+        const sendButton = document.getElementById('sendButton');
+        const buttonIcon = document.getElementById('buttonIcon');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+        const chatArea = document.getElementById('chatArea');
+        const robotContainer = document.getElementById('robotContainer');
+        const newChatButton = document.getElementById('newChatButton');
+
+        // Ganti dengan KUNCI API Gemini Anda yang sebenarnya
+        const GEMINI_API_KEY = ""; // Biarkan kosong, Canvas akan menyediakannya saat runtime
+
+        // Fungsi untuk menampilkan pesan di area chat
+        function displayMessage(message, sender) {
+            const messageBubble = document.createElement('div');
+            messageBubble.classList.add('message-bubble', sender === 'user' ? 'user-message' : 'ai-message');
+
+            // Deteksi blok kode untuk Prism.js
+            const codeBlockRegex = /```(\w+)?\n([\s\S]*?)\n```/;
+            const match = message.match(codeBlockRegex);
+
+            if (match) {
+                const language = match[1] || 'markup';
+                const codeContent = match[2];
+                const pre = document.createElement('pre');
+                const code = document.createElement('code');
+                code.classList.add(`language-${language}`);
+                code.textContent = codeContent; // Menggunakan textContent untuk mencegah injeksi HTML
+                pre.appendChild(code);
+                messageBubble.appendChild(pre);
+                // Tambahkan teks di luar blok kode jika ada
+                const parts = message.split(codeBlockRegex);
+                if (parts[0]) {
+                    const textBefore = document.createElement('p');
+                    textBefore.innerHTML = parts[0].replace(/\*\*(.*?)\*\*/g, '$1').replace(/\n/g, '<br>');
+                    messageBubble.prepend(textBefore);
+                }
+                if (parts[parts.length - 1]) {
+                    const textAfter = document.createElement('p');
+                    textAfter.innerHTML = parts[parts.length - 1].replace(/\*\*(.*?)\*\*/g, '$1').replace(/\n/g, '<br>');
+                    messageBubble.appendChild(textAfter);
+                }
+            } else {
+                // Jika bukan blok kode, tampilkan sebagai teks biasa
+                messageBubble.innerHTML = message.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\n/g, '<br>');
+            }
+            
+            chatArea.appendChild(messageBubble);
+            chatArea.scrollTop = chatArea.scrollHeight; // Scroll ke bawah
+            Prism.highlightAll(); // Minta Prism.js untuk mewarnai kode baru
+        }
+
+        // Fungsi untuk melakukan panggilan API dengan exponential backoff
+        async function callGeminiAPI(prompt, retries = 5, delay = 1000) {
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
+            const payload = {
+                contents: [{
+                    role: "user",
+                    parts: [{ text: prompt }]
+                }]
+            };
+
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        if (response.status === 429 && i < retries - 1) {
+                            console.warn(`Rate limit hit. Retrying in ${delay / 1000} seconds...`);
+                            await new Promise(res => setTimeout(res, delay));
+                            delay *= 2;
+                            continue;
+                        }
+                        const errorData = await response.json();
+                        throw new Error(`API Error: ${response.status} - ${errorData.error.message || 'Unknown error'}`);
+                    }
+
+                    const result = await response.json();
+                    if (result.candidates && result.candidates.length > 0 &&
+                        result.candidates[0].content && result.candidates[0].content.parts &&
+                        result.candidates[0].content.parts.length > 0) {
+                        return result.candidates[0].content.parts[0].text;
+                    } else {
+                        throw new Error("Respons API tidak memiliki format yang diharapkan.");
+                    }
+                } catch (error) {
+                    if (i === retries - 1) {
+                        throw error;
+                    }
+                    console.error(`Percobaan ${i + 1} gagal: ${error.message}. Mencoba lagi...`);
+                    await new Promise(res => setTimeout(res, delay));
+                    delay *= 2;
+                }
+            }
+            throw new Error("Gagal terhubung ke Gemini API setelah beberapa percobaan.");
+        }
+
+        // Fungsi untuk mengirim pesan
+        async function sendMessage() {
+            const prompt = promptInput.value.trim();
+            if (!prompt) return;
+
+            displayMessage(prompt, 'user');
+            promptInput.value = ''; // Kosongkan input
+
+            // Tampilkan loading dan mulai animasi robot
+            buttonIcon.classList.add('hidden');
+            loadingSpinner.classList.remove('hidden');
+            sendButton.disabled = true;
+            robotContainer.classList.add('talking');
+
+            try {
+                let finalPrompt = prompt;
+                // Keywords to detect if the user is asking for code
+                const codeKeywords = ['code', 'html', 'css', 'javascript', 'python', 'java', 'c++', 'php', 'ruby', 'syntax', 'program', 'script', 'function', 'class', 'contoh kode', 'tulis kode', 'buat kode'];
+                const isCodeRequest = codeKeywords.some(keyword => prompt.toLowerCase().includes(keyword));
+
+                if (isCodeRequest) {
+                    finalPrompt = `Tolong berikan respons dalam format blok kode Markdown (misal: \`\`\`html\\n...kode Anda...\\n\`\`\` atau \`\`\`javascript\\n...kode Anda...\\n\`\`\`):\n\n${prompt}`;
+                } else {
+                    finalPrompt = `Tolong jawab prompt berikut dalam format daftar bernomor, dengan setiap poin dimulai dengan angka dan titik (contoh: 1. Ini poin pertama.):\n\n${prompt}`;
+                }
+
+                const responseText = await callGeminiAPI(finalPrompt);
+                displayMessage(responseText, 'ai');
+            } catch (error) {
+                console.error("Terjadi kesalahan:", error);
+                displayMessage(`Terjadi kesalahan: ${error.message}. Silakan coba lagi.`, 'ai');
+            } finally {
+                // Sembunyikan loading dan hentikan animasi robot
+                buttonIcon.classList.remove('hidden');
+                loadingSpinner.classList.add('hidden');
+                sendButton.disabled = false;
+                robotContainer.classList.remove('talking');
+            }
+        }
+
+        // Event Listeners
+        sendButton.addEventListener('click', sendMessage);
+        promptInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { // Kirim saat Enter ditekan, kecuali Shift+Enter
+                e.preventDefault(); // Mencegah baris baru
+                sendMessage();
+            }
+        });
+
+        // Auto-resize textarea
+        promptInput.addEventListener('input', () => {
+            promptInput.style.height = 'auto';
+            promptInput.style.height = promptInput.scrollHeight + 'px';
+        });
+
+        // New Chat button functionality
+        newChatButton.addEventListener('click', () => {
+            chatArea.innerHTML = `
+                <div class="ai-message message-bubble">
+                    Halo! Saya Danny AI, siap membantu Anda. Ada yang bisa saya bantu?
+                </div>
+            `;
+            promptInput.value = '';
+            promptInput.style.height = 'auto'; // Reset tinggi textarea
+        });
+    </script>
+</body>
+</html>
